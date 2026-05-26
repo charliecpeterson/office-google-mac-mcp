@@ -60,6 +60,24 @@ more reliable with a curated toolset; it's safer than `exec`-ing model output;
 it's self-documenting. A single `run_applescript` escape hatch covers whatever
 the semantic tools don't.
 
+### Small-model support
+
+Three things help thin/local models run these tools as well as large ones:
+
+1. **Per-app servers + server `instructions`.** Each server carries only one
+   app's tools and ships a FastMCP `instructions=` string (the module-level
+   `INSTRUCTIONS`) with the workflow, conventions, and dead-ends — portable to any
+   client (Claude Code, opencode, local). A Claude Code skill at
+   `.claude/skills/office-mcp/` adds richer on-demand recipes (copy to
+   `~/.claude/skills/` to use across projects).
+2. **Composite ("thick") tools** that fold a multi-step workflow into one call, so
+   the model supplies intent, not orchestration: `word_add_section`,
+   `excel_write_table`, `ppt_add_content_slide`. A deterministic composite result
+   also needs less visual re-checking (a weak spot for small models). Keep these
+   few — primitives stay underneath for flexibility.
+3. **Validated enum choices** (styles, layouts, chart types, weights, colors)
+   return the valid options on bad input, so a model self-corrects.
+
 ## Project structure
 
 ```
@@ -101,7 +119,11 @@ them here.
 Each app server also exposes `<app>_screenshot()` — a PNG of the app window so
 the model can see its own work — and `run_applescript(script)` as the escape hatch.
 
+Composite tools (one call, multi-step — preferred for common tasks and small
+models): `word_add_section`, `excel_write_table`, `ppt_add_content_slide`.
+
 ### Word
+- `word_add_section(heading, body, level)` — styled heading + body (composite)
 - `word_status` — running? active document name/path, whether text is selected
 - `word_get_document_text` — full text (with optional length cap)
 - `word_get_selection` — currently selected text
@@ -119,6 +141,7 @@ the model can see its own work — and `run_applescript(script)` as the escape h
 - `word_screenshot`
 
 ### Excel
+- `excel_write_table(start_cell, values, header)` — write + header + borders + autofit (composite)
 - `excel_status` — running? active workbook, active sheet, all sheets, selection
 - `excel_list_sheets`
 - `excel_read_range(range, sheet)` — values as a 2D list (JXA → JSON)
@@ -140,6 +163,7 @@ the model can see its own work — and `run_applescript(script)` as the escape h
 - `excel_screenshot`
 
 ### PowerPoint
+- `ppt_add_content_slide(title, bullets)` — titled, bulleted slide (composite)
 - `ppt_status` — running? active presentation, slide count, current slide
 - `ppt_list_slides` — text summary per slide
 - `ppt_read_slide(index)` — shapes {shape, name, text}

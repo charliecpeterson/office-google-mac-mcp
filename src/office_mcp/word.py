@@ -9,10 +9,44 @@ from fastmcp.utilities.types import Image
 
 from office_mcp import bridge
 
+# Sent to MCP clients on connect (FastMCP `instructions`) — usage context that
+# works for any client, including small local models.
+INSTRUCTIONS = """\
+You are working live inside the user's open Microsoft Word document (macOS, via Apple events).
+
+Workflow: read the document or selection first to understand the state, make the edit, then
+call word_screenshot to confirm the result looks right. Paragraph/table indices are 1-based.
+
+Common tasks: prefer word_add_section (styled heading + body in one call) for adding a section.
+word_insert_text appends at the document end; word_insert_at_cursor and word_replace_selection
+act where the user's cursor/selection is.
+
+Not scriptable in Word: comments. If no tool fits, use run_applescript.
+
+First use prompts a macOS Automation grant (and Screen Recording for word_screenshot) on the
+terminal app — ask the user to approve it; a denial returns a clear "not authorized" error.
+"""
+
 # Friendly names -> WdBuiltinStyle enum terms for word_set_style.
 _STYLES = {"normal": "style normal", "title": "style title", "subtitle": "style subtitle"}
 for _i in range(1, 10):
     _STYLES[f"heading {_i}"] = f"style heading{_i}"
+
+# %s is the heading-style enum; heading text and body come via argv.
+_ADD_SECTION = """
+on run argv
+  tell application "Microsoft Word"
+    end key selection move (a story item)
+    type text selection text (item 1 of argv)
+    set style of selection to %s
+    type paragraph selection
+    set style of selection to style normal
+    type text selection text (item 2 of argv)
+    type paragraph selection
+  end tell
+  return "ok"
+end run
+"""
 
 _STATUS = """
 const W = Application('Microsoft Word');
@@ -276,6 +310,14 @@ def register(mcp):
         return bridge.run_applescript(
             _ADD_TEXTBOX % (float(left), float(top), float(width), float(height)), text
         )
+
+    @mcp.tool
+    def word_add_section(heading: str, body: str = "", level: int = 1) -> str:
+        """Append a styled heading and a body paragraph in one step (the common
+        'add a section' workflow). level is the heading level, 1-9."""
+        if not 1 <= level <= 9:
+            raise ValueError("level must be 1-9")
+        return bridge.run_applescript(_ADD_SECTION % f"style heading{int(level)}", heading, body)
 
     @mcp.tool
     def word_screenshot() -> Image:

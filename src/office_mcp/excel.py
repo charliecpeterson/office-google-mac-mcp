@@ -30,6 +30,21 @@ _BORDER_WEIGHTS = {
     "thick": "border weight thick",
 }
 
+# Sent to MCP clients on connect (FastMCP `instructions`).
+INSTRUCTIONS = """\
+You are working live inside the user's open Microsoft Excel workbook (macOS, via Apple events).
+
+Ranges are A1-style; reads return 2-D lists. Most tools take an optional `sheet` (name) — omit
+it for the active sheet; passing it is how you work across tabs. Colors are [r, g, b] (0-255).
+Confirm visual results with excel_screenshot.
+
+Common tasks: prefer excel_write_table (writes values + bold header + borders + autofit in one
+call) for dropping in a formatted table. Use excel_set_array_formula for CSE/array formulas.
+
+If no tool fits, use run_applescript. First use prompts a macOS Automation grant (and Screen
+Recording for excel_screenshot) on the terminal app — ask the user to approve it.
+"""
+
 _STATUS = """
 const xl = Application('Microsoft Excel');
 const out = { running: xl.running() };
@@ -371,6 +386,49 @@ def register(mcp):
         else:
             bridge.run_applescript(f'on run argv\ntell application "Microsoft Excel"\n{body}\nend tell\nend run', sheet)
         return f"created {chart_type} chart from {cell_range}"
+
+    @mcp.tool
+    def excel_write_table(
+        start_cell: str,
+        values: list[list[float | str]],
+        header: bool = True,
+        sheet: str | None = None,
+    ) -> str:
+        """Write a 2-D table starting at `start_cell` and format it in one step: a
+        bold, filled header row (if header), thin borders, and autofit columns. The
+        'drop in a clean table' workflow."""
+        m = re.match(r"([A-Za-z]+)(\d+)$", start_cell)
+        if not m:
+            raise ValueError(f"start_cell must be a cell like 'A1', got {start_cell!r}")
+        col0, row0 = m.group(1).upper(), int(m.group(2))
+        rows = len(values)
+        cols = max((len(r) for r in values), default=0)
+        if rows == 0 or cols == 0:
+            raise ValueError("values must be a non-empty 2-D list")
+        end_col = _num_to_col(_col_to_num(col0) + cols - 1)
+        full = f"{col0}{row0}:{end_col}{row0 + rows - 1}"
+        js = [
+            "const xl = Application('Microsoft Excel');",
+            f"const t = {_target(sheet)};",
+            f"t.ranges[{json.dumps(full)}].value = {json.dumps(values)};",
+        ]
+        if header:
+            hdr = f"{col0}{row0}:{end_col}{row0}"
+            js.append(f"t.ranges[{json.dumps(hdr)}].fontObject.bold = true;")
+            js.append(f"t.ranges[{json.dumps(hdr)}].interiorObject.color = [220, 230, 242];")
+        js.append("JSON.stringify(true);")
+        bridge.run_jxa("\n".join(js))
+        clause = (
+            f'set rng to range "{full}" of __SREF__\n'
+            "repeat with idx in {edge top, edge bottom, edge left, edge right, inside horizontal, inside vertical}\n"
+            "set b to get border rng which border idx\n"
+            "set line style of b to continuous\n"
+            "set weight of b to border weight thin\n"
+            "end repeat\n"
+            "autofit (entire column of rng)"
+        )
+        _run_on_sheet(clause, sheet)
+        return f"wrote table {full}"
 
     @mcp.tool
     def excel_screenshot() -> Image:

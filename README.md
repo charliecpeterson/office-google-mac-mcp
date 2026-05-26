@@ -21,21 +21,27 @@ office-mcp powerpoint
 
 ## What it can do
 
-62 tools across the three apps. Every app also has a `*_screenshot` (a PNG of the
+65 tools across the three apps. Every app also has a `*_screenshot` (a PNG of the
 window, even when occluded) and a `run_applescript` escape hatch.
 
-- **Word (17)** — read document / selection / heading outline; insert at the end,
+- **Word (18)** — read document / selection / heading outline; insert at the end,
   at the cursor, or replace the selection; find-and-replace; font formatting;
   paragraph styles (headings); tables (insert + read/write cells); inline pictures;
   floating text boxes.
-- **Excel (25)** — read/write ranges (2-D) and cells; formulas and array formulas;
+- **Excel (26)** — read/write ranges (2-D) and cells; formulas and array formulas;
   the current selection; cell & number formatting; borders; insert/delete rows and
   columns; autofit; sort; autofilter; charts; sheet management (add/delete/rename/
   activate) for cross-tab work.
-- **PowerPoint (20)** — list/read slides and the current slide; add/delete/move
+- **PowerPoint (21)** — list/read slides and the current slide; add/delete/move
   slides; set text by index or at the selection; add text boxes and images; move,
   resize, and format shapes (fill/border/font); animations (incl. reveal-on-click);
   speaker notes.
+
+Each app also has a few **composite tools** that fold a common multi-step workflow
+into one call — `word_add_section`, `excel_write_table`, `ppt_add_content_slide` —
+which keeps things reliable for smaller models. And each server ships usage
+`instructions` (workflow, conventions, gotchas) that any MCP client receives on
+connect; there's also a Claude Code skill at `.claude/skills/office-mcp/`.
 
 ## Configure (Claude Code)
 

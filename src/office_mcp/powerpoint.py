@@ -43,6 +43,38 @@ _LAYOUTS = {
     "two content": "slide layout two column text",
 }
 
+# Sent to MCP clients on connect (FastMCP `instructions`).
+INSTRUCTIONS = """\
+You are working live inside the user's open Microsoft PowerPoint presentation (macOS, via Apple
+events). Slides and shapes are 1-based; colors are [r, g, b] (0-255).
+
+Workflow: read a slide with ppt_read_slide to get shape indices before editing, and confirm
+visual results with ppt_screenshot. PowerPoint can't report which shape is selected — take a
+screenshot to see the selection.
+
+Common tasks: prefer ppt_add_content_slide (title + bullets in one call) for a normal slide.
+For a reveal-on-click build, use ppt_add_animation with exit=True on a cover shape.
+
+Not scriptable in PowerPoint (don't attempt — they error): duplicating slides, creating charts,
+and creating tables on slides. Do those manually or tell the user. If no tool fits, use
+run_applescript.
+
+First use prompts a macOS Automation grant (and Screen Recording for ppt_screenshot) on the
+terminal app — ask the user to approve it.
+"""
+
+# item 1 = title, item 2 = body (bullets joined by returns).
+_ADD_CONTENT_SLIDE = """
+on run argv
+  tell application "Microsoft PowerPoint"
+    set s to make new slide at end of active presentation with properties {layout:slide layout text slide}
+    set content of text range of text frame of shape 1 of s to (item 1 of argv)
+    set content of text range of text frame of shape 2 of s to (item 2 of argv)
+    return slide index of s
+  end tell
+end run
+"""
+
 _STATUS = """
 const pp = Application('Microsoft PowerPoint');
 const out = { running: pp.running() };
@@ -362,6 +394,12 @@ def register(mcp):
             f"    set sh to shape {int(shape_index)} of slide {int(slide_index)} of active presentation\n"
             f"    {body}\nend tell\nreturn \"ok\""
         )
+
+    @mcp.tool
+    def ppt_add_content_slide(title: str, bullets: list[str]) -> int:
+        """Add a slide with a title and a bulleted body in one step (the common
+        'add a content slide' workflow). Returns the new slide index."""
+        return int(bridge.run_applescript(_ADD_CONTENT_SLIDE, title, "\r".join(bullets)))
 
     @mcp.tool
     def ppt_add_textbox(

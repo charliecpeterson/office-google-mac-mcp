@@ -2,7 +2,7 @@
 
 Each launch registers only one app's tools, keeping the toolset small and
 focused. New apps are added by writing a module with a `register(mcp)` function
-and listing it in APPS.
+and an `INSTRUCTIONS` string, and listing it in APPS.
 """
 
 from fastmcp import FastMCP
@@ -21,6 +21,6 @@ def build(app: str) -> FastMCP:
     if module is None:
         available = ", ".join(sorted(APPS))
         raise SystemExit(f"unknown app {app!r}; available: {available}")
-    mcp = FastMCP(f"office-{app}")
+    mcp = FastMCP(f"office-{app}", instructions=getattr(module, "INSTRUCTIONS", None))
     module.register(mcp)
     return mcp
