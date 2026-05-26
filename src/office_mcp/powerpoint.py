@@ -7,6 +7,8 @@ slides are created with `make new slide at end of active presentation` (the
 Status never launches PowerPoint: `.running()` is checked first.
 """
 
+from fastmcp.utilities.types import Image
+
 from office_mcp import bridge
 
 # Friendly layout names -> EPPSlideLayout enum terms accepted by ppt_add_slide.
@@ -141,6 +143,11 @@ def register(mcp):
         """Set the text of a shape (1-based) on a slide (1-based). Use ppt_read_slide
         to find shape indexes."""
         return bridge.run_applescript(_SET_TEXT % (int(shape_index), int(slide_index)), text)
+
+    @mcp.tool
+    def ppt_screenshot() -> Image:
+        """A PNG screenshot of the PowerPoint window, to visually check the slide."""
+        return Image(data=bridge.screenshot("Microsoft PowerPoint"), format="png")
 
     @mcp.tool
     def run_applescript(script: str) -> str:

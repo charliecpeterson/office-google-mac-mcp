@@ -96,36 +96,40 @@ them here.
 - Read/status tools must **not** auto-launch the app — they report "not running"
   instead. Launching only happens on an explicit action.
 
-## Tool surface (target v1)
+## Tool surface (v1, shipped)
 
-Each app server also exposes `run_applescript(script)` as the escape hatch.
+Each app server also exposes `<app>_screenshot()` — a PNG of the app window so
+the model can see its own work — and `run_applescript(script)` as the escape hatch.
 
 ### Word
 - `word_status` — running? active document name/path, whether text is selected
 - `word_get_document_text` — full text (with optional length cap)
-- `word_get_selection` — currently selected text + range
-- `word_insert_text(text, location)` — insert at selection / start / end
+- `word_get_selection` — currently selected text
+- `word_insert_text(text)` — append at end of document
 - `word_replace_selection(text)`
-- `word_find_replace(find, replace, all)`
-- `word_apply_formatting(...)` — bold/italic/size/color on the selection
+- `word_find_replace(find, replace, match_case)`
+- `word_apply_formatting(...)` — bold/italic/underline/size/color on the selection
 - `word_get_outline` — heading structure
+- `word_screenshot`
 
 ### Excel
-- `excel_status` — running? active workbook, active sheet, selection address
+- `excel_status` — running? active workbook, active sheet, all sheets, selection
 - `excel_list_sheets`
-- `excel_read_range(sheet, range)` — values as a 2D list (JXA → JSON)
-- `excel_write_range(sheet, range, values)`
-- `excel_set_cell(sheet, cell, value)`
-- `excel_set_formula(sheet, cell, formula)`
+- `excel_read_range(range, sheet)` — values as a 2D list (JXA → JSON)
+- `excel_write_range(range, values, sheet)`
+- `excel_set_cell(cell, value, sheet)`
+- `excel_set_formula(cell, formula, sheet)`
 - `excel_get_selection`
+- `excel_screenshot`
 
 ### PowerPoint
 - `ppt_status` — running? active presentation, slide count, current slide
-- `ppt_list_slides` — index, title, text summary per slide
-- `ppt_read_slide(index)`
+- `ppt_list_slides` — text summary per slide
+- `ppt_read_slide(index)` — shapes {shape, name, text}
 - `ppt_add_slide(layout, position)`
 - `ppt_set_text(slide, shape, text)`
 - `ppt_get_current_slide`
+- `ppt_screenshot`
 
 ## Client configuration
 
@@ -144,8 +148,12 @@ only its own tools.
 First time a tool drives an app, macOS shows a one-time Automation prompt. It
 attaches to the **parent terminal app** (Terminal / iTerm / VS Code), not Python
 — so you grant "iTerm → control Microsoft Word" once under System Settings →
-Privacy & Security → Automation. Denial surfaces as a clear "not authorized"
-error (TCC -1743), not a crash.
+Privacy & Security → Automation. Each app prompts separately. Denial surfaces as
+a clear "not authorized" error (TCC -1743), not a crash.
+
+The `screenshot` tools additionally need **Screen Recording** permission for the
+same terminal app (a separate prompt, and it only takes effect after the terminal
+is restarted). Denial surfaces as a clear "not authorized" error.
 
 ## Scope
 
@@ -156,7 +164,9 @@ error (TCC -1743), not a crash.
 
 ## Dependencies
 
-`fastmcp`, Python ≥ 3.12. macOS only. No `pywin32`, no `PIL`, no `appscript`.
+`fastmcp`, `pyobjc-framework-Quartz` (window-id lookup for screenshots — a clean
+binary wheel, no compile), Python ≥ 3.12. macOS only. No `pywin32`, no `PIL`, no
+`appscript`.
 
 ## Testing
 
@@ -173,6 +183,55 @@ End-to-end verification is manual against open apps, app by app.
 4. ~~Excel module.~~ Done — all 8 Excel tools verified live.
 5. ~~PowerPoint module.~~ Done — all 7 PowerPoint tools verified live.
 6. README + config examples + polish.
+7. ~~Vision: `<app>_screenshot`.~~ Done — verified end-to-end through the MCP.
+
+## v2 roadmap — toward a first-class coworker
+
+Priorities, learned from driving the tools on a real deck (the win: a
+do → see → verify loop; the recurring friction: editing blind, and falling back
+to `run_applescript` for common operations).
+
+### Tier 1
+- **Screenshot / vision.** Shipped. Closes the do → see → verify loop and makes
+  every other edit checkable. (See "Vision findings".)
+- **Selection-aware editing.** Act where the user is pointing. Today Word only
+  appends at the end and PowerPoint addresses shapes by index — neither works off
+  the live cursor / selected shape. Add: read the current selection (and selected
+  shape in PowerPoint) and edit it in place. The most "coworker" interaction and
+  currently the weakest.
+
+### Tier 2 — promote escape-hatch operations to real tools
+- PowerPoint: `ppt_add_click_reveal(slide, shape)` (the reveal-on-click build we
+  did by hand), delete / duplicate / reorder slide, format / move / resize shape,
+  add textbox / image.
+- Word: insert-at-cursor, set a paragraph's style (we read the outline but can't
+  set "Heading 2"), tables, comments.
+- Excel: cell formatting + number formats, insert / delete rows-cols, sort/filter.
+
+### Tier 3 — polish
+- Safety: a backup/checkpoint tool. The sandbox blocks `/tmp`, but a copy can be
+  saved beside the original before destructive edits.
+- Richer structural reads: shape geometry, types, and existing animations —
+  geometry + z-order is what let us identify a cover shape *without* vision, so
+  feeding structure makes the model smarter between screenshots.
+- Cross-app: pull an Excel chart / range into a slide.
+
+### Principles
+Keep per-app servers lean. Vision and selection are universal → shared core,
+per-app wrappers. Default to non-destructive; bias reads toward returning
+structure the model can reason over.
+
+### Vision findings (learned from live runs)
+
+- `screencapture -l<windowid> -o -x` grabs one app window cleanly, even when
+  occluded, without moving it. The window id comes from Quartz
+  (`CGWindowListCopyWindowInfo`, match `kCGWindowOwnerName`, largest area).
+- PowerPoint's own PNG export is a dead end here: the Office **sandbox** blocks
+  writes to normal paths (it can only write near the open file), and the
+  "every slide / just this one" modal kills the AppleScript `save … as PNG`
+  (returns success, writes nothing).
+- Screenshots need **Screen Recording** permission (separate from Automation),
+  and it only takes effect after the terminal restarts.
 
 ### Word dictionary notes (learned from live runs)
 

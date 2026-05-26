@@ -10,6 +10,8 @@ Excel: `.running()` is checked first.
 import json
 from typing import Any
 
+from fastmcp.utilities.types import Image
+
 from office_mcp import bridge
 
 _STATUS = """
@@ -110,6 +112,11 @@ def register(mcp):
             "JSON.stringify(true);"
         )
         return bridge.run_jxa(script)
+
+    @mcp.tool
+    def excel_screenshot() -> Image:
+        """A PNG screenshot of the Excel window, to visually check the workbook."""
+        return Image(data=bridge.screenshot("Microsoft Excel"), format="png")
 
     @mcp.tool
     def run_applescript(script: str) -> str:

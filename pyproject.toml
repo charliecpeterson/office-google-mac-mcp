@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "fastmcp>=2.3.3",
+    "pyobjc-framework-Quartz>=10.0",
 ]
 
 [project.scripts]

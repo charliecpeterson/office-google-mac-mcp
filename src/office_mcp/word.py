@@ -5,6 +5,8 @@ so user text passes as an argument, sidestepping quote-escaping. Status never
 launches Word: `.running()` is checked first.
 """
 
+from fastmcp.utilities.types import Image
+
 from office_mcp import bridge
 
 _STATUS = """
@@ -166,6 +168,11 @@ def register(mcp):
         """The heading structure of the active document: a list of
         {level, text, paragraph} for each Heading 1-9 paragraph."""
         return bridge.run_jxa(_OUTLINE)
+
+    @mcp.tool
+    def word_screenshot() -> Image:
+        """A PNG screenshot of the Word window, to visually check the document."""
+        return Image(data=bridge.screenshot("Microsoft Word"), format="png")
 
     @mcp.tool
     def run_applescript(script: str) -> str:
