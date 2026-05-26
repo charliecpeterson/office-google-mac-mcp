@@ -113,6 +113,8 @@ the model can see its own work — and `run_applescript(script)` as the escape h
 - `word_get_outline` — heading structure
 - `word_set_style(style, paragraph)` — normal / title / heading 1-9
 - `word_insert_table(rows, columns)` — insert a table at the cursor
+- `word_set_table_cell(row, column, text, table)` / `word_get_table_cell(...)`
+- `word_insert_picture(path)` — inline picture at the cursor
 - `word_screenshot`
 
 ### Excel
@@ -222,10 +224,10 @@ to `run_applescript` for common operations).
   (font), `ppt_delete_slide`, `ppt_move_slide`, `ppt_get_notes` / `ppt_set_notes`.
   Still to do: add textbox / image, duplicate slide (AppleScript `duplicate`
   returns -50 — needs a copy/paste workaround).
-- Word: shipped insert-at-cursor, `word_set_style` (heading/normal/title),
-  `word_insert_table`. Comments aren't scriptable in Word's dictionary (only
-  `delete all comments` exists) — would need the escape hatch or a different path.
-  Still to do: fill table cells with data, table formatting.
+- Word: shipped insert-at-cursor, `word_set_style`, `word_insert_table`,
+  `word_set_table_cell` / `word_get_table_cell`, `word_insert_picture`. Comments
+  aren't scriptable in Word's dictionary (only `delete all comments` exists). Still
+  to do: table/cell formatting, floating shapes (drawing-layer add/move).
 - Excel: shipped `excel_format_range` (font/fill/number format), `excel_insert_rows`
   / `excel_delete_rows`, `excel_insert_columns` / `excel_delete_columns`,
   `excel_autofit`. Still to do: sort / filter, borders.
@@ -274,6 +276,11 @@ structure the model can reason over.
   number of columns}`.
 - Comments are not a scriptable class (no comment element / make), only
   `delete all comments`.
+- Table cells: `get cell from table (table N of active document) row R column C`,
+  then `content of text object of` the cell (reads end with `\\r\\x07` markers —
+  strip them).
+- Insert a picture: `make new inline picture at <text range> with properties
+  {file name:"/path"}`.
 
 ### Excel dictionary notes (learned from live runs)
 

@@ -77,6 +77,31 @@ on run argv
 end run
 """
 
+# %s are table, row, column (1-based); cell text comes via argv.
+_SET_TABLE_CELL = """
+on run argv
+  tell application "Microsoft Word"
+    set c to get cell from table (table %s of active document) row %s column %s
+    set content of text object of c to (item 1 of argv)
+  end tell
+  return "ok"
+end run
+"""
+
+_GET_TABLE_CELL = (
+    'tell application "Microsoft Word" to return content of text object of '
+    "(get cell from table (table %s of active document) row %s column %s)"
+)
+
+_INSERT_PICTURE = """
+on run argv
+  tell application "Microsoft Word"
+    make new inline picture at (text object of selection) with properties {file name:(item 1 of argv)}
+  end tell
+  return "ok"
+end run
+"""
+
 # %s is the match-case boolean literal; find/replace text come in via argv.
 _FIND_REPLACE = """
 on run argv
@@ -211,6 +236,22 @@ def register(mcp):
             "end tell\n"
             'return "ok"'
         )
+
+    @mcp.tool
+    def word_set_table_cell(row: int, column: int, text: str, table: int = 1) -> str:
+        """Set a table cell's text (1-based row/column; `table` is the Nth table, default first)."""
+        return bridge.run_applescript(_SET_TABLE_CELL % (int(table), int(row), int(column)), text)
+
+    @mcp.tool
+    def word_get_table_cell(row: int, column: int, table: int = 1) -> str:
+        """Read a table cell's text (1-based)."""
+        raw = bridge.run_applescript(_GET_TABLE_CELL % (int(table), int(row), int(column)))
+        return raw.rstrip("\r\n\x07")
+
+    @mcp.tool
+    def word_insert_picture(path: str) -> str:
+        """Insert an image file as an inline picture at the cursor."""
+        return bridge.run_applescript(_INSERT_PICTURE, path)
 
     @mcp.tool
     def word_screenshot() -> Image:
