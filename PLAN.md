@@ -133,6 +133,10 @@ the model can see its own work — and `run_applescript(script)` as the escape h
 - `ppt_get_current_slide`
 - `ppt_get_selection` — type / slide / selected text
 - `ppt_set_selected_text(text)` — edit where the user is working
+- `ppt_get_notes(slide)` / `ppt_set_notes(slide, text)` — speaker notes
+- `ppt_set_shape_position(slide, shape, left, top, width, height)` — move/resize
+- `ppt_add_animation(slide, shape, effect, trigger, exit)` — e.g. reveal-on-click
+- `ppt_delete_slide(slide)` / `ppt_move_slide(slide, before)`
 - `ppt_screenshot`
 
 ## Client configuration
@@ -205,11 +209,13 @@ to `run_applescript` for common operations).
   empty via both JXA and AppleScript) — a screenshot shows the handles instead.
 
 ### Tier 2 — promote escape-hatch operations to real tools
-- PowerPoint: `ppt_add_click_reveal(slide, shape)` (the reveal-on-click build we
-  did by hand), delete / duplicate / reorder slide, format / move / resize shape,
-  add textbox / image.
-- Word: insert-at-cursor, set a paragraph's style (we read the outline but can't
-  set "Heading 2"), tables, comments.
+- PowerPoint: shipped `ppt_add_animation` (reveal-on-click etc.),
+  `ppt_set_shape_position`, `ppt_delete_slide`, `ppt_move_slide`, `ppt_get_notes`
+  / `ppt_set_notes`. Still to do: shape fill/line color and font formatting,
+  add textbox / image, duplicate slide (AppleScript `duplicate` returns -50 — needs
+  a copy/paste workaround).
+- Word: insert-at-cursor (done), set a paragraph's style (we read the outline but
+  can't set "Heading 2"), tables, comments.
 - Excel: cell formatting + number formats, insert / delete rows-cols, sort/filter.
 
 ### Tier 3 — polish
@@ -278,6 +284,14 @@ structure the model can reason over.
   type is "shapes" — so we can't enumerate selected shapes. Clicking a text
   placeholder enters "text" mode (cursor), not "shapes" mode. Editing via the
   selection's text range works (replace highlighted / insert at cursor).
+- Shape position is `left position` / `top` / `width` / `height` (note: `top`,
+  not `top position` — the latter reads null).
+- Speaker notes: the "Notes Placeholder" shape on `notes page of slide N` (its
+  index varies, so find it by name). JXA can set its `content` directly.
+- Animation: `add effect (main sequence of timeline of slide) for <shape> fx
+  <MsoAnimEffect> trigger <MsoAnimTriggerType>`, then `set exit animation` for an
+  exit effect. The trigger isn't readable back (write-only), so verify in a show.
+- `move slide X to before slide Y` works; `duplicate slide X` returns -50.
 
 ## Assumptions taken from discussion
 

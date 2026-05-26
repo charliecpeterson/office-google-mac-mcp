@@ -7,9 +7,25 @@ slides are created with `make new slide at end of active presentation` (the
 Status never launches PowerPoint: `.running()` is checked first.
 """
 
+import json
+
 from fastmcp.utilities.types import Image
 
 from office_mcp import bridge
+
+# Friendly names -> MsoAnimEffect / MsoAnimTriggerType terms for ppt_add_animation.
+_ANIM_EFFECTS = {
+    "appear": "animation type appear",
+    "fade": "animation type fade",
+    "fly in": "animation type fly",
+    "wipe": "animation type wipe",
+    "zoom": "animation type zoom",
+}
+_ANIM_TRIGGERS = {
+    "click": "on page click",
+    "with_previous": "with previous",
+    "after_previous": "after previous",
+}
 
 # Friendly layout names -> EPPSlideLayout enum terms accepted by ppt_add_slide.
 _LAYOUTS = {
@@ -126,6 +142,35 @@ on run argv
 end run
 """
 
+# Notes live in the "Notes Placeholder" shape on a slide's notes page; find it by
+# name (its index varies). %d is the 1-based slide index, %s the JSON-escaped text.
+_GET_NOTES = """
+const pp = Application('Microsoft PowerPoint');
+const sh = pp.activePresentation.slides[%d - 1].notesPage.shapes;
+let t = null;
+for (let i = 0; i < sh.length; i++) {
+  if (sh[i].name().indexOf('Notes') >= 0) {
+    try { t = sh[i].textFrame.textRange.content(); } catch (e) {}
+    break;
+  }
+}
+JSON.stringify(t);
+"""
+
+_SET_NOTES = """
+const pp = Application('Microsoft PowerPoint');
+const sh = pp.activePresentation.slides[%d - 1].notesPage.shapes;
+let done = false;
+for (let i = 0; i < sh.length; i++) {
+  if (sh[i].name().indexOf('Notes') >= 0) {
+    sh[i].textFrame.textRange.content = %s;
+    done = true;
+    break;
+  }
+}
+JSON.stringify(done);
+"""
+
 
 def register(mcp):
     @mcp.tool
@@ -188,6 +233,88 @@ def register(mcp):
         inserts at the cursor (text mode), or the whole selected shape's text
         (shape mode)."""
         return bridge.run_applescript(_SET_SELECTED_TEXT, text)
+
+    @mcp.tool
+    def ppt_get_notes(slide_index: int) -> str | None:
+        """The speaker-notes text for a slide (1-based)."""
+        return bridge.run_jxa(_GET_NOTES % int(slide_index))
+
+    @mcp.tool
+    def ppt_set_notes(slide_index: int, text: str) -> bool:
+        """Set a slide's speaker notes (1-based). Good for leaving context that
+        belongs with the slide but shouldn't appear on it."""
+        return bridge.run_jxa(_SET_NOTES % (int(slide_index), json.dumps(text)))
+
+    @mcp.tool
+    def ppt_set_shape_position(
+        slide_index: int,
+        shape_index: int,
+        left: float | None = None,
+        top: float | None = None,
+        width: float | None = None,
+        height: float | None = None,
+    ) -> str:
+        """Move and/or resize a shape (1-based indexes), in points. Only the
+        arguments you pass are changed."""
+        lines = []
+        if left is not None:
+            lines.append(f"set left position of sh to {float(left)}")
+        if top is not None:
+            lines.append(f"set top of sh to {float(top)}")
+        if width is not None:
+            lines.append(f"set width of sh to {float(width)}")
+        if height is not None:
+            lines.append(f"set height of sh to {float(height)}")
+        if not lines:
+            return "nothing to change"
+        body = "\n    ".join(lines)
+        return bridge.run_applescript(
+            'tell application "Microsoft PowerPoint"\n'
+            f"    set sh to shape {int(shape_index)} of slide {int(slide_index)} of active presentation\n"
+            f"    {body}\nend tell\nreturn \"ok\""
+        )
+
+    @mcp.tool
+    def ppt_add_animation(
+        slide_index: int,
+        shape_index: int,
+        effect: str = "fade",
+        trigger: str = "click",
+        exit: bool = False,
+    ) -> str:
+        """Animate a shape (1-based). effect: appear, fade, fly in, wipe, zoom.
+        trigger: click, with_previous, after_previous. exit=True animates it out
+        instead of in (e.g. a cover that disappears on click to reveal what's under it)."""
+        if effect not in _ANIM_EFFECTS:
+            raise ValueError(f"unknown effect {effect!r}; choose from {sorted(_ANIM_EFFECTS)}")
+        if trigger not in _ANIM_TRIGGERS:
+            raise ValueError(f"unknown trigger {trigger!r}; choose from {sorted(_ANIM_TRIGGERS)}")
+        return bridge.run_applescript(
+            'tell application "Microsoft PowerPoint"\n'
+            f"  set sld to slide {int(slide_index)} of active presentation\n"
+            f"  set fx to add effect (main sequence of timeline of sld) for shape {int(shape_index)} of sld fx {_ANIM_EFFECTS[effect]} trigger {_ANIM_TRIGGERS[trigger]}\n"
+            f"  set exit animation of fx to {'true' if exit else 'false'}\n"
+            '  return "ok"\n'
+            "end tell"
+        )
+
+    @mcp.tool
+    def ppt_delete_slide(slide_index: int) -> str:
+        """Delete a slide (1-based)."""
+        bridge.run_applescript(
+            f'tell application "Microsoft PowerPoint" to delete slide {int(slide_index)} of active presentation'
+        )
+        return f"deleted slide {slide_index}"
+
+    @mcp.tool
+    def ppt_move_slide(slide_index: int, before_index: int) -> str:
+        """Move a slide so it sits just before the slide currently at before_index
+        (both 1-based)."""
+        bridge.run_applescript(
+            f'tell application "Microsoft PowerPoint" to move slide {int(slide_index)} '
+            f"of active presentation to before slide {int(before_index)} of active presentation"
+        )
+        return f"moved slide {slide_index} before {before_index}"
 
     @mcp.tool
     def ppt_screenshot() -> Image:
