@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "word": {
+      "command": "uv",
+      "args": ["run", "--directory", "/Users/charlie/mcps/OfficeMCP", "office-mcp", "word"]
+    }
+  }
+}
