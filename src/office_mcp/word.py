@@ -9,6 +9,11 @@ from fastmcp.utilities.types import Image
 
 from office_mcp import bridge
 
+# Friendly names -> WdBuiltinStyle enum terms for word_set_style.
+_STYLES = {"normal": "style normal", "title": "style title", "subtitle": "style subtitle"}
+for _i in range(1, 10):
+    _STYLES[f"heading {_i}"] = f"style heading{_i}"
+
 _STATUS = """
 const W = Application('Microsoft Word');
 const out = { running: W.running() };
@@ -182,6 +187,30 @@ def register(mcp):
         """The heading structure of the active document: a list of
         {level, text, paragraph} for each Heading 1-9 paragraph."""
         return bridge.run_jxa(_OUTLINE)
+
+    @mcp.tool
+    def word_set_style(style: str, paragraph: int | None = None) -> str:
+        """Set a paragraph's style. `style` is one of: normal, title, subtitle,
+        heading 1 .. heading 9. Applies to the selected paragraph(s) by default;
+        pass `paragraph` (1-based) to target a specific one."""
+        key = style.strip().lower()
+        if key not in _STYLES:
+            raise ValueError(f"unknown style {style!r}; choose from {sorted(_STYLES)}")
+        target = "selection" if paragraph is None else f"paragraph {int(paragraph)} of active document"
+        return bridge.run_applescript(
+            f'tell application "Microsoft Word" to set style of {target} to {_STYLES[key]}'
+        )
+
+    @mcp.tool
+    def word_insert_table(rows: int, columns: int) -> str:
+        """Insert an empty table at the cursor."""
+        return bridge.run_applescript(
+            'tell application "Microsoft Word"\n'
+            "  set r to text object of selection\n"
+            f"  make new table at r with properties {{number of rows:{int(rows)}, number of columns:{int(columns)}}}\n"
+            "end tell\n"
+            'return "ok"'
+        )
 
     @mcp.tool
     def word_screenshot() -> Image:

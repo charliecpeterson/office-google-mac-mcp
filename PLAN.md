@@ -111,6 +111,8 @@ the model can see its own work — and `run_applescript(script)` as the escape h
 - `word_find_replace(find, replace, match_case)`
 - `word_apply_formatting(...)` — bold/italic/underline/size/color on the selection
 - `word_get_outline` — heading structure
+- `word_set_style(style, paragraph)` — normal / title / heading 1-9
+- `word_insert_table(rows, columns)` — insert a table at the cursor
 - `word_screenshot`
 
 ### Excel
@@ -220,8 +222,10 @@ to `run_applescript` for common operations).
   (font), `ppt_delete_slide`, `ppt_move_slide`, `ppt_get_notes` / `ppt_set_notes`.
   Still to do: add textbox / image, duplicate slide (AppleScript `duplicate`
   returns -50 — needs a copy/paste workaround).
-- Word: insert-at-cursor (done), set a paragraph's style (we read the outline but
-  can't set "Heading 2"), tables, comments.
+- Word: shipped insert-at-cursor, `word_set_style` (heading/normal/title),
+  `word_insert_table`. Comments aren't scriptable in Word's dictionary (only
+  `delete all comments` exists) — would need the escape hatch or a different path.
+  Still to do: fill table cells with data, table formatting.
 - Excel: shipped `excel_format_range` (font/fill/number format), `excel_insert_rows`
   / `excel_delete_rows`, `excel_insert_columns` / `excel_delete_columns`,
   `excel_autofit`. Still to do: sort / filter, borders.
@@ -264,6 +268,12 @@ structure the model can reason over.
   … replace replace all wrap find find continue`.
 - Select-all: `home key … move (a story item)` then `end key … extend (by
   selecting) move (a story item)`.
+- Set a paragraph/selection style with the `WdBuiltinStyle` enum: `set style of
+  selection to style heading2` (no space: `style heading2`, not `style heading 2`).
+- Insert a table: `make new table at <text range> with properties {number of rows,
+  number of columns}`.
+- Comments are not a scriptable class (no comment element / make), only
+  `delete all comments`.
 
 ### Excel dictionary notes (learned from live runs)
 
