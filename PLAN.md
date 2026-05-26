@@ -122,6 +122,10 @@ the model can see its own work — and `run_applescript(script)` as the escape h
 - `excel_set_formula(cell, formula, sheet)`
 - `excel_get_selection`
 - `excel_set_selection(value)` — set every cell in the selection
+- `excel_format_range(range, sheet, bold, italic, size, font_color, fill_color, number_format)`
+- `excel_insert_rows(at_row, count, sheet)` / `excel_delete_rows(...)`
+- `excel_insert_columns(at_col, count, sheet)` / `excel_delete_columns(...)`
+- `excel_autofit(range, sheet)` — auto-fit column widths
 - `excel_screenshot`
 
 ### PowerPoint
@@ -218,7 +222,9 @@ to `run_applescript` for common operations).
   returns -50 — needs a copy/paste workaround).
 - Word: insert-at-cursor (done), set a paragraph's style (we read the outline but
   can't set "Heading 2"), tables, comments.
-- Excel: cell formatting + number formats, insert / delete rows-cols, sort/filter.
+- Excel: shipped `excel_format_range` (font/fill/number format), `excel_insert_rows`
+  / `excel_delete_rows`, `excel_insert_columns` / `excel_delete_columns`,
+  `excel_autofit`. Still to do: sort / filter, borders.
 
 ### Tier 3 — polish
 - Safety: a backup/checkpoint tool. The sandbox blocks `/tmp`, but a copy can be
@@ -270,6 +276,12 @@ structure the model can reason over.
   hyperlink address, unrelated). Values round-trip as JSON 2-D lists.
 - Read tools return `Any`, so the value lands in the MCP text content, not the
   structured `.data` channel — fine for LLM clients.
+- Formatting is JXA too: `range.fontObject.{bold,italic,fontSize,color}`,
+  `range.interiorObject.color`, `range.numberFormat`. Colors are `[r, g, b]`
+  lists (0-255). Font size is `fontSize` / `font size`, not `size`.
+- Rows/cols use AppleScript `insert into range` / `delete range` on a row range
+  ("5:7") or column range ("C:E"); `autofit (entire column of range …)`. The sheet
+  name is passed via argv to avoid escaping.
 
 ### PowerPoint dictionary notes (learned from live runs)
 
