@@ -170,7 +170,7 @@ End-to-end verification is manual against open apps, app by app.
 2. ~~Word reads (text, selection, outline).~~ Done.
 3. ~~Word writes (insert, replace, find/replace, formatting).~~ Done — all 9 Word
    tools verified live.
-4. Excel module.
+4. ~~Excel module.~~ Done — all 8 Excel tools verified live.
 5. PowerPoint module.
 6. README + config examples + polish.
 
@@ -187,6 +187,18 @@ End-to-end verification is manual against open apps, app by app.
   … replace replace all wrap find find continue`.
 - Select-all: `home key … move (a story item)` then `end key … extend (by
   selecting) move (a story item)`.
+
+### Excel dictionary notes (learned from live runs)
+
+- Unlike Word, JXA does everything cleanly, including writes via property
+  assignment (`range.value = …`, `range.formula = …`).
+- Range addressing uses **bracket** notation: `sheet.ranges['A1:B2']` and
+  `workbook.worksheets['Sheet1']`. The function-call form `ranges('A1:B2')`
+  fails (-1728).
+- A range's address comes from `getAddress()` (the `address` *property* is the
+  hyperlink address, unrelated). Values round-trip as JSON 2-D lists.
+- Read tools return `Any`, so the value lands in the MCP text content, not the
+  structured `.data` channel — fine for LLM clients.
 
 ## Assumptions taken from discussion
 

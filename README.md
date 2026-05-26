@@ -14,11 +14,11 @@ Each launch exposes one app's tools, keeping the toolset small and focused:
 
 ```
 office-mcp word
-office-mcp excel        # not yet implemented
+office-mcp excel
 office-mcp powerpoint   # not yet implemented
 ```
 
-Word is implemented first; Excel and PowerPoint follow.
+Word and Excel are implemented; PowerPoint follows.
 
 ## Configure (Claude Code)
 

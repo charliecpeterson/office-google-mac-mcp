@@ -7,10 +7,11 @@ and listing it in APPS.
 
 from fastmcp import FastMCP
 
-from office_mcp import word
+from office_mcp import excel, word
 
 APPS = {
     "word": word,
+    "excel": excel,
 }
 
 
