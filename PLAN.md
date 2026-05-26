@@ -147,6 +147,8 @@ the model can see its own work — and `run_applescript(script)` as the escape h
 - `ppt_get_selection` — type / slide / selected text
 - `ppt_set_selected_text(text)` — edit where the user is working
 - `ppt_get_notes(slide)` / `ppt_set_notes(slide, text)` — speaker notes
+- `ppt_add_textbox(slide, text, left, top, width, height)` — returns new shape index
+- `ppt_add_image(slide, path, left, top, width, height)` — returns new shape index
 - `ppt_set_shape_position(slide, shape, left, top, width, height)` — move/resize
 - `ppt_format_shape(slide, shape, fill_color, border_color, border_weight)`
 - `ppt_format_text(slide, shape, bold, italic, underline, size, color)`
@@ -226,9 +228,9 @@ to `run_applescript` for common operations).
 ### Tier 2 — promote escape-hatch operations to real tools
 - PowerPoint: shipped `ppt_add_animation` (reveal-on-click etc.),
   `ppt_set_shape_position`, `ppt_format_shape` (fill/border), `ppt_format_text`
-  (font), `ppt_delete_slide`, `ppt_move_slide`, `ppt_get_notes` / `ppt_set_notes`.
-  Still to do: add textbox / image, duplicate slide (AppleScript `duplicate`
-  returns -50 — needs a copy/paste workaround).
+  (font), `ppt_add_textbox`, `ppt_add_image`, `ppt_delete_slide`, `ppt_move_slide`,
+  `ppt_get_notes` / `ppt_set_notes`. Still to do: duplicate slide (AppleScript
+  `duplicate` returns -50 — needs a copy/paste workaround), charts/tables on slides.
 - Word: shipped insert-at-cursor, `word_set_style`, `word_insert_table`,
   `word_set_table_cell` / `word_get_table_cell`, `word_insert_picture`. Comments
   aren't scriptable in Word's dictionary (only `delete all comments` exists). Still
@@ -337,6 +339,10 @@ structure the model can reason over.
   <MsoAnimEffect> trigger <MsoAnimTriggerType>`, then `set exit animation` for an
   exit effect. The trigger isn't readable back (write-only), so verify in a show.
 - `move slide X to before slide Y` works; `duplicate slide X` returns -50.
+- Add shapes: `make new text box at <slide> with properties {left position, top,
+  width, height}` (then set its text), `make new picture at <slide> with properties
+  {file name, left position, top, …}`. The new shape is the last one (its index =
+  count of shapes).
 - Colors are integer `{r, g, b}` lists (0-255): fill = `fore color of fill format`,
   border = `fore color of line format` (+ `line weight`), text = `font color of
   font of text range`. The PowerPoint `font` has boolean `underline` (unlike Word's

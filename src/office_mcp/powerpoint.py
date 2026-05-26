@@ -364,6 +364,56 @@ def register(mcp):
         )
 
     @mcp.tool
+    def ppt_add_textbox(
+        slide_index: int,
+        text: str = "",
+        left: float = 100.0,
+        top: float = 100.0,
+        width: float = 300.0,
+        height: float = 50.0,
+    ) -> int:
+        """Add a text box to a slide (1-based), positioned/sized in points. Returns
+        the new shape's index (usable with ppt_format_shape / ppt_set_shape_position)."""
+        script = (
+            "on run argv\n"
+            'tell application "Microsoft PowerPoint"\n'
+            f"  set s to slide {int(slide_index)} of active presentation\n"
+            f"  set tb to make new text box at s with properties {{left position:{float(left)}, top:{float(top)}, width:{float(width)}, height:{float(height)}}}\n"
+            "  set content of text range of text frame of tb to (item 1 of argv)\n"
+            "  return (count of shapes of s) as string\n"
+            "end tell\n"
+            "end run"
+        )
+        return int(bridge.run_applescript(script, text))
+
+    @mcp.tool
+    def ppt_add_image(
+        slide_index: int,
+        path: str,
+        left: float = 100.0,
+        top: float = 100.0,
+        width: float = 0.0,
+        height: float = 0.0,
+    ) -> int:
+        """Add an image file to a slide (1-based). width/height of 0 keep the image's
+        native size. Returns the new shape's index."""
+        props = ["file name:(item 1 of argv)", f"left position:{float(left)}", f"top:{float(top)}"]
+        if width > 0:
+            props.append(f"width:{float(width)}")
+        if height > 0:
+            props.append(f"height:{float(height)}")
+        script = (
+            "on run argv\n"
+            'tell application "Microsoft PowerPoint"\n'
+            f"  set s to slide {int(slide_index)} of active presentation\n"
+            f"  make new picture at s with properties {{{', '.join(props)}}}\n"
+            "  return (count of shapes of s) as string\n"
+            "end tell\n"
+            "end run"
+        )
+        return int(bridge.run_applescript(script, path))
+
+    @mcp.tool
     def ppt_delete_slide(slide_index: int) -> str:
         """Delete a slide (1-based)."""
         bridge.run_applescript(
