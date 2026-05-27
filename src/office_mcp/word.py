@@ -14,14 +14,20 @@ from office_mcp import bridge
 INSTRUCTIONS = """\
 You are working live inside the user's open Microsoft Word document (macOS, via Apple events).
 
-Workflow: read the document or selection first to understand the state, make the edit, then
-call word_screenshot to confirm the result looks right. Paragraph/table indices are 1-based.
+Workflow: to verify edits, prefer the structured reads — word_get_outline (headings),
+word_get_paragraphs ({index, style, text} per paragraph), and word_get_stats ({pages, words,
+paragraphs}) — over word_screenshot, which is the most expensive call; screenshot only to check
+true visual layout. Paragraph/table indices are 1-based.
 
-Common tasks: prefer word_add_section (styled heading + body in one call) for adding a section.
-word_insert_text appends at the document end; word_insert_at_cursor and word_replace_selection
-act where the user's cursor/selection is.
+Building a document: prefer word_add_section (styled heading + body) and word_insert_table(data=...)
+or word_fill_table for tables (one call, not many word_set_table_cell). word_insert_text appends
+each call as its own new paragraph; word_insert_at_cursor / word_replace_selection act at the
+cursor/selection. word_set_style sets a paragraph's heading level by index.
 
-Not scriptable in Word: comments. If no tool fits, use run_applescript.
+Gotchas: set font size/color with word_apply_formatting (it acts on the selection) — setting font
+size via raw Apple events fails. word_find_replace understands Word's codes (^p paragraph mark,
+^l line break, ^t tab), which is handy for splitting or joining paragraphs. Not scriptable in
+Word: comments. If no tool fits, use run_applescript.
 
 First use prompts a macOS Automation grant (and Screen Recording for word_screenshot) on the
 terminal app — ask the user to approve it; a denial returns a clear "not authorized" error.
@@ -97,6 +103,62 @@ on run argv
   tell application "Microsoft Word"
     end key selection move (a story item)
     type text selection text (item 1 of argv)
+    type paragraph selection
+  end tell
+  return "ok"
+end run
+"""
+
+_STATS = (
+    'tell application "Microsoft Word"\n'
+    "set d to active document\n"
+    "return ((compute statistics d statistic statistic pages) as string) & \",\" & "
+    "((compute statistics d statistic statistic words) as string) & \",\" & "
+    "((compute statistics d statistic statistic paragraphs) as string)\n"
+    "end tell"
+)
+
+# %d caps the text length returned per paragraph.
+_PARAGRAPHS = r"""
+const W = Application('Microsoft Word');
+const out = [];
+if (W.running() && W.documents.length > 0) {
+  const paras = W.activeDocument.paragraphs;
+  for (let i = 0; i < paras.length; i++) {
+    let style = '', text = '';
+    try { style = paras[i].style.nameLocal(); } catch (e) {}
+    try { text = paras[i].textObject.content().replace(/[\r\n]+$/, ''); } catch (e) {}
+    out.push({ index: i + 1, style: style, text: text.slice(0, %d) });
+  }
+}
+JSON.stringify(out);
+"""
+
+# Fill an existing table. %s are: table index, rows, columns, columns (index math).
+_FILL_TABLE = """
+on run argv
+  tell application "Microsoft Word"
+    set t to table %s of active document
+    repeat with r from 1 to %s
+      repeat with c from 1 to %s
+        set content of text object of (get cell from table t row r column c) to (item ((r - 1) * %s + c) of argv)
+      end repeat
+    end repeat
+  end tell
+  return "ok"
+end run
+"""
+
+# Create a table at the cursor and fill it. %s are: rows, columns, rows, columns, columns.
+_INSERT_TABLE_DATA = """
+on run argv
+  tell application "Microsoft Word"
+    set t to make new table at (text object of selection) with properties {number of rows:%s, number of columns:%s}
+    repeat with r from 1 to %s
+      repeat with c from 1 to %s
+        set content of text object of (get cell from table t row r column c) to (item ((r - 1) * %s + c) of argv)
+      end repeat
+    end repeat
   end tell
   return "ok"
 end run
@@ -211,7 +273,8 @@ def register(mcp):
 
     @mcp.tool
     def word_insert_text(text: str) -> str:
-        """Insert text at the end of the active document."""
+        """Append text as its own new paragraph at the end of the document (it is
+        paragraph-terminated, so a following heading/section won't glue onto it)."""
         return bridge.run_applescript(_INSERT_AT_END, text)
 
     @mcp.tool
@@ -259,6 +322,20 @@ def register(mcp):
         return bridge.run_jxa(_OUTLINE)
 
     @mcp.tool
+    def word_get_stats() -> dict:
+        """Document statistics: {pages, words, paragraphs}. Use this instead of a
+        screenshot to check length and pagination."""
+        pages, words, paragraphs = bridge.run_applescript(_STATS).split(",")
+        return {"pages": int(pages), "words": int(words), "paragraphs": int(paragraphs)}
+
+    @mcp.tool
+    def word_get_paragraphs(max_chars: int = 200) -> list:
+        """Every paragraph as {index, style, text} — a structured view to verify
+        edits and find paragraph indexes without a screenshot. Each text is
+        truncated to max_chars."""
+        return bridge.run_jxa(_PARAGRAPHS % int(max_chars))
+
+    @mcp.tool
     def word_set_style(style: str, paragraph: int | None = None) -> str:
         """Set a paragraph's style. `style` is one of: normal, title, subtitle,
         heading 1 .. heading 9. Applies to the selected paragraph(s) by default;
@@ -272,8 +349,19 @@ def register(mcp):
         )
 
     @mcp.tool
-    def word_insert_table(rows: int, columns: int) -> str:
-        """Insert an empty table at the cursor."""
+    def word_insert_table(rows: int = 0, columns: int = 0, data: list[list[str]] | None = None) -> str:
+        """Insert a table at the cursor. Pass `data` (a 2-D list) to size the table
+        to the data and fill it in one call; otherwise give `rows` and `columns` for
+        an empty table."""
+        if data:
+            n_rows = len(data)
+            n_cols = max(len(r) for r in data)
+            flat = [str(v) for r in data for v in (list(r) + [""] * (n_cols - len(r)))]
+            return bridge.run_applescript(
+                _INSERT_TABLE_DATA % (n_rows, n_cols, n_rows, n_cols, n_cols), *flat
+            )
+        if rows < 1 or columns < 1:
+            raise ValueError("provide `data`, or `rows` and `columns` >= 1")
         return bridge.run_applescript(
             'tell application "Microsoft Word"\n'
             "  set r to text object of selection\n"
@@ -281,6 +369,17 @@ def register(mcp):
             "end tell\n"
             'return "ok"'
         )
+
+    @mcp.tool
+    def word_fill_table(rows: list[list[str]], table: int = 1) -> str:
+        """Fill an existing table from a 2-D list in one call (much cheaper than
+        many word_set_table_cell calls). The table (the Nth, 1-based) must be at
+        least as large as the data."""
+        if not rows:
+            raise ValueError("rows must be a non-empty 2-D list")
+        n_cols = max(len(r) for r in rows)
+        flat = [str(v) for r in rows for v in (list(r) + [""] * (n_cols - len(r)))]
+        return bridge.run_applescript(_FILL_TABLE % (int(table), len(rows), n_cols, n_cols), *flat)
 
     @mcp.tool
     def word_set_table_cell(row: int, column: int, text: str, table: int = 1) -> str:

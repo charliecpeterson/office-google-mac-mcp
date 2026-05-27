@@ -133,8 +133,11 @@ models): `word_add_section`, `excel_write_table`, `ppt_add_content_slide`.
 - `word_find_replace(find, replace, match_case)`
 - `word_apply_formatting(...)` — bold/italic/underline/size/color on the selection
 - `word_get_outline` — heading structure
+- `word_get_paragraphs(max_chars)` — {index, style, text} per paragraph
+- `word_get_stats` — {pages, words, paragraphs}
 - `word_set_style(style, paragraph)` — normal / title / heading 1-9
-- `word_insert_table(rows, columns)` — insert a table at the cursor
+- `word_insert_table(rows, columns, data)` — empty table, or sized-and-filled from `data`
+- `word_fill_table(rows, table)` — bulk-fill an existing table in one call
 - `word_set_table_cell(row, column, text, table)` / `word_get_table_cell(...)`
 - `word_insert_picture(path)` — inline picture at the cursor
 - `word_add_textbox(text, left, top, width, height)` — floating text box
@@ -259,10 +262,13 @@ to `run_applescript` for common operations).
   (confirmed): slide duplicate (no `duplicate`/`paste`, only `copy object`), charts
   (no chart class), and tables on slides (`make new table` → -2710). These need GUI
   scripting or manual steps.
-- Word: shipped insert-at-cursor, `word_set_style`, `word_insert_table`,
-  `word_set_table_cell` / `word_get_table_cell`, `word_insert_picture`,
-  `word_add_textbox` (floating). Comments aren't scriptable in Word's dictionary
-  (only `delete all comments` exists). Still to do: table/cell formatting.
+- Word: shipped insert-at-cursor, `word_set_style`, `word_insert_table` (with
+  `data`), `word_fill_table`, `word_set_table_cell` / `word_get_table_cell`,
+  `word_insert_picture`, `word_add_textbox` (floating), and the structured reads
+  `word_get_paragraphs` / `word_get_stats` (added from dogfooding feedback, along
+  with paragraph-safe `word_insert_text`). Comments aren't scriptable. Still to do:
+  table/cell formatting; anchor-based insert/restyle (insert/style relative to
+  matched text instead of by index).
 - Excel: shipped formatting, rows/cols, autofit, sheet management (add/delete/
   rename/activate), sort, borders, autofilter, charts, and array formulas
   (`excel_set_array_formula`). Cross-sheet refs work via the `sheet` param and
@@ -320,6 +326,13 @@ structure the model can reason over.
 - Floating text box: `make new text box at active document with properties
   {left position, top, width, height}`, then set `content of text range of text
   frame`. Bulk `delete every shape` fails (-1708) — delete shapes by index.
+- `word_insert_text` ends with `type paragraph` so appended content is its own
+  paragraph — otherwise a following heading glues onto it and inherits its style
+  (a real bug found dogfooding; see the session notes that drove the read tools,
+  bulk table fill, and stats below).
+- Stats: `compute statistics <doc> statistic statistic pages|words|paragraphs`.
+  Find/replace honors Word codes in the text (`^p` paragraph, `^l` line break,
+  `^t` tab) — useful for splitting/joining paragraphs.
 
 ### Excel dictionary notes (learned from live runs)
 
