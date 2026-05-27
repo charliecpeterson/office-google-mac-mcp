@@ -19,15 +19,20 @@ word_get_paragraphs ({index, style, text} per paragraph), and word_get_stats ({p
 paragraphs}) — over word_screenshot, which is the most expensive call; screenshot only to check
 true visual layout. Paragraph/table indices are 1-based.
 
-Building a document: prefer word_add_section (styled heading + body) and word_insert_table(data=...)
-or word_fill_table for tables (one call, not many word_set_table_cell). word_insert_text appends
-each call as its own new paragraph; word_insert_at_cursor / word_replace_selection act at the
-cursor/selection. word_set_style sets a paragraph's heading level by index.
+Editing is paragraph-anchored: read structure with word_get_paragraphs to get the index you want,
+then edit by index — word_insert_paragraph(after=N or before=N, style=...) for mid-document
+inserts, word_replace_paragraph(N, ...), word_delete_paragraph(N). word_get_paragraph(N) returns
+one paragraph's full text (e.g. to build a precise find/replace anchor). word_insert_text only
+appends at the end; word_insert_at_cursor / word_replace_selection act at the live cursor/selection.
 
-Gotchas: set font size/color with word_apply_formatting (it acts on the selection) — setting font
-size via raw Apple events fails. word_find_replace understands Word's codes (^p paragraph mark,
-^l line break, ^t tab), which is handy for splitting or joining paragraphs. Not scriptable in
-Word: comments. If no tool fits, use run_applescript.
+Building from scratch: word_add_section (styled heading + body), and word_insert_table(data=...) or
+word_fill_table for tables (one call, not many word_set_table_cell). word_set_style sets a
+paragraph's heading level by index.
+
+Gotchas: set font size/color with word_apply_formatting (it acts on the selection) — raw Apple-event
+font sizing fails. word_find_replace understands Word codes (^p, ^l, ^t) but caps the replacement at
+255 chars (it errors past that — use word_replace_paragraph / word_insert_paragraph for big text).
+Not scriptable in Word: comments. If no tool fits, use run_applescript.
 
 First use prompts a macOS Automation grant (and Screen Recording for word_screenshot) on the
 terminal app — ask the user to approve it; a denial returns a clear "not authorized" error.
@@ -118,20 +123,56 @@ _STATS = (
     "end tell"
 )
 
-# %d caps the text length returned per paragraph.
+# %d caps the text length returned per paragraph. Table cells (Word marks them
+# with \x07) get tagged `table:true` and de-noised.
 _PARAGRAPHS = r"""
 const W = Application('Microsoft Word');
 const out = [];
 if (W.running() && W.documents.length > 0) {
   const paras = W.activeDocument.paragraphs;
   for (let i = 0; i < paras.length; i++) {
-    let style = '', text = '';
+    let style = '', raw = '';
     try { style = paras[i].style.nameLocal(); } catch (e) {}
-    try { text = paras[i].textObject.content().replace(/[\r\n]+$/, ''); } catch (e) {}
-    out.push({ index: i + 1, style: style, text: text.slice(0, %d) });
+    try { raw = paras[i].textObject.content(); } catch (e) {}
+    const inTable = raw.indexOf('\x07') >= 0;
+    const text = raw.replace(/[\r\n\x07]+$/, '').replace(/\x07/g, ' | ');
+    const o = { index: i + 1, style: style, text: text.slice(0, %d) };
+    if (inTable) o.table = true;
+    out.push(o);
   }
 }
 JSON.stringify(out);
+"""
+
+_GET_PARAGRAPH = r"""
+const W = Application('Microsoft Word');
+let r = null;
+if (W.running() && W.documents.length > 0) {
+  try { r = W.activeDocument.paragraphs[%d - 1].textObject.content().replace(/[\r\n\x07]+$/, ''); } catch (e) {}
+}
+JSON.stringify(r);
+"""
+
+# %s is the 1-based paragraph index; new text comes via argv. `& return` keeps the
+# paragraph mark so the paragraph isn't merged into the next one.
+_REPLACE_PARAGRAPH = """
+on run argv
+  tell application "Microsoft Word"
+    set content of (text object of paragraph %s of active document) to ((item 1 of argv) & return)
+  end tell
+  return "ok"
+end run
+"""
+
+_DELETE_PARAGRAPH = """
+tell application "Microsoft Word"
+  set d to active document
+  set s to start of content of (text object of paragraph %s of d)
+  set e to end of content of (text object of paragraph %s of d)
+  select (create range d start s end e)
+  set content of (text object of selection) to ""
+end tell
+return "ok"
 """
 
 # Fill an existing table. %s are: table index, rows, columns, columns (index math).
@@ -285,7 +326,13 @@ def register(mcp):
     @mcp.tool
     def word_find_replace(find: str, replace: str, match_case: bool = False) -> str:
         """Replace every occurrence of `find` with `replace` across the active
-        document. Returns "true" if a match was found."""
+        document. Returns "true" if a match was found. `find`/`replace` understand
+        Word codes (^p paragraph, ^l line break, ^t tab)."""
+        if len(replace) > 255:
+            raise ValueError(
+                "Word's find/replace caps the replacement at 255 characters; for "
+                "larger text use word_replace_paragraph or word_insert_paragraph"
+            )
         script = _FIND_REPLACE % ("true" if match_case else "false")
         return bridge.run_applescript(script, find, replace)
 
@@ -330,10 +377,65 @@ def register(mcp):
 
     @mcp.tool
     def word_get_paragraphs(max_chars: int = 200) -> list:
-        """Every paragraph as {index, style, text} — a structured view to verify
-        edits and find paragraph indexes without a screenshot. Each text is
-        truncated to max_chars."""
+        """Every paragraph as {index, style, text} (table cells are tagged
+        `table:true`) — a structured view to verify edits and find paragraph
+        indexes without a screenshot. Each text is truncated to max_chars."""
         return bridge.run_jxa(_PARAGRAPHS % int(max_chars))
+
+    @mcp.tool
+    def word_get_paragraph(index: int) -> str | None:
+        """The full, untruncated text of one paragraph (1-based). Use it to build a
+        precise find/replace anchor or to read a paragraph in full."""
+        return bridge.run_jxa(_GET_PARAGRAPH % int(index))
+
+    @mcp.tool
+    def word_insert_paragraph(
+        text: str,
+        after: int | None = None,
+        before: int | None = None,
+        style: str | None = None,
+    ) -> str:
+        """Insert a new paragraph relative to an existing one (1-based): pass
+        exactly one of `after` or `before`. Optionally style it (normal, title,
+        heading 1-9). This is the way to add text mid-document — read structure with
+        word_get_paragraphs first to find the index."""
+        if (after is None) == (before is None):
+            raise ValueError("pass exactly one of `after` or `before` (a 1-based paragraph index)")
+        if after is not None:
+            pos, new_index = f"end of content of (text object of paragraph {int(after)} of d)", int(after) + 1
+        else:
+            pos, new_index = f"start of content of (text object of paragraph {int(before)} of d)", int(before)
+        style_line = ""
+        if style is not None:
+            key = style.strip().lower()
+            if key not in _STYLES:
+                raise ValueError(f"unknown style {style!r}; choose from {sorted(_STYLES)}")
+            style_line = f"\n    set style of paragraph {new_index} of d to {_STYLES[key]}"
+        script = (
+            "on run argv\n"
+            '  tell application "Microsoft Word"\n'
+            "    set d to active document\n"
+            f"    set r to create range d start ({pos}) end ({pos})\n"
+            "    select r\n"
+            "    type text selection text (item 1 of argv)\n"
+            "    type paragraph selection"
+            f"{style_line}\n"
+            "  end tell\n"
+            '  return "ok"\n'
+            "end run"
+        )
+        return bridge.run_applescript(script, text)
+
+    @mcp.tool
+    def word_replace_paragraph(index: int, text: str) -> str:
+        """Replace the text of paragraph `index` (1-based), keeping it a separate
+        paragraph and its style."""
+        return bridge.run_applescript(_REPLACE_PARAGRAPH % int(index), text)
+
+    @mcp.tool
+    def word_delete_paragraph(index: int) -> str:
+        """Delete paragraph `index` (1-based) entirely."""
+        return bridge.run_applescript(_DELETE_PARAGRAPH % (int(index), int(index)))
 
     @mcp.tool
     def word_set_style(style: str, paragraph: int | None = None) -> str:

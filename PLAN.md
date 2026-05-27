@@ -133,8 +133,11 @@ models): `word_add_section`, `excel_write_table`, `ppt_add_content_slide`.
 - `word_find_replace(find, replace, match_case)`
 - `word_apply_formatting(...)` — bold/italic/underline/size/color on the selection
 - `word_get_outline` — heading structure
-- `word_get_paragraphs(max_chars)` — {index, style, text} per paragraph
+- `word_get_paragraphs(max_chars)` — {index, style, text, table?} per paragraph
+- `word_get_paragraph(index)` — one paragraph's full untruncated text
 - `word_get_stats` — {pages, words, paragraphs}
+- `word_insert_paragraph(text, after, before, style)` — mid-document insert by index
+- `word_replace_paragraph(index, text)` / `word_delete_paragraph(index)`
 - `word_set_style(style, paragraph)` — normal / title / heading 1-9
 - `word_insert_table(rows, columns, data)` — empty table, or sized-and-filled from `data`
 - `word_fill_table(rows, table)` — bulk-fill an existing table in one call
@@ -264,11 +267,12 @@ to `run_applescript` for common operations).
   scripting or manual steps.
 - Word: shipped insert-at-cursor, `word_set_style`, `word_insert_table` (with
   `data`), `word_fill_table`, `word_set_table_cell` / `word_get_table_cell`,
-  `word_insert_picture`, `word_add_textbox` (floating), and the structured reads
-  `word_get_paragraphs` / `word_get_stats` (added from dogfooding feedback, along
-  with paragraph-safe `word_insert_text`). Comments aren't scriptable. Still to do:
-  table/cell formatting; anchor-based insert/restyle (insert/style relative to
-  matched text instead of by index).
+  `word_insert_picture`, `word_add_textbox` (floating), the structured reads
+  `word_get_paragraphs` / `word_get_paragraph` / `word_get_stats`, and
+  paragraph-anchored editing (`word_insert_paragraph` after/before N,
+  `word_replace_paragraph`, `word_delete_paragraph`) — the co-editor model, added
+  from dogfooding feedback. Comments aren't scriptable. Still to do: table/cell
+  formatting; anchoring by matched text rather than paragraph index.
 - Excel: shipped formatting, rows/cols, autofit, sheet management (add/delete/
   rename/activate), sort, borders, autofilter, charts, and array formulas
   (`excel_set_array_formula`). Cross-sheet refs work via the `sheet` param and
@@ -332,7 +336,14 @@ structure the model can reason over.
   bulk table fill, and stats below).
 - Stats: `compute statistics <doc> statistic statistic pages|words|paragraphs`.
   Find/replace honors Word codes in the text (`^p` paragraph, `^l` line break,
-  `^t` tab) — useful for splitting/joining paragraphs.
+  `^t` tab) but caps the replacement at 255 chars (raises a clear error past that).
+- Editing is paragraph-anchored. Mid-document insert: `create range` at `start of
+  content` / `end of content` of paragraph N, `select` it, then `type text` +
+  `type paragraph` (plain `insert`/setting a collapsed range's content fail).
+  Replace a paragraph with `set content of (text object of paragraph N) to (text
+  & return)` — the `& return` keeps the paragraph mark (omitting it merges into the
+  next paragraph, the bug found dogfooding). Delete: select the paragraph's
+  start..end range and set its content to "". Table cells carry a `\x07` marker.
 
 ### Excel dictionary notes (learned from live runs)
 

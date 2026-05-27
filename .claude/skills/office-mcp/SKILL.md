@@ -34,9 +34,14 @@ and `*_screenshot`.
 
 ## Per-app notes
 
-- **Word**: `word_insert_text` appends at the end; `word_insert_at_cursor` /
-  `word_replace_selection` act at the cursor/selection; `word_set_style` for
-  headings; tables via `word_insert_table` + `word_set_table_cell`.
+- **Word**: editing is **paragraph-anchored** — read `word_get_paragraphs` to get
+  the index, then `word_insert_paragraph(after=N or before=N, style=…)`,
+  `word_replace_paragraph(N, …)`, `word_delete_paragraph(N)`. `word_get_paragraph(N)`
+  gives one paragraph's full text. `word_insert_text` only appends at the end;
+  `word_insert_at_cursor` / `word_replace_selection` act at the live cursor.
+  `word_get_stats` for page/word counts (no screenshot). Build with `word_add_section`
+  and `word_insert_table(data=…)` / `word_fill_table`. `word_find_replace` caps the
+  replacement at 255 chars — use the paragraph tools for bigger text.
 - **Excel**: formatting via `excel_format_range`; structure via
   `excel_insert_rows`/`_columns`, `excel_sort`, `excel_autofilter`,
   `excel_set_borders`, `excel_create_chart`; sheets via `excel_add_sheet` etc.

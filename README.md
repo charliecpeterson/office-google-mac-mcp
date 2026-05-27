@@ -21,13 +21,14 @@ office-mcp powerpoint
 
 ## What it can do
 
-68 tools across the three apps. Every app also has a `*_screenshot` (a PNG of the
+72 tools across the three apps. Every app also has a `*_screenshot` (a PNG of the
 window, even when occluded) and a `run_applescript` escape hatch.
 
-- **Word (21)** — read document / selection / heading outline / per-paragraph
-  structure / page-word stats; insert at the end, at the cursor, or replace the
-  selection; find-and-replace; font formatting; paragraph styles (headings); tables
-  (insert + bulk-fill + read/write cells); inline pictures; floating text boxes.
+- **Word (25)** — read document / selection / heading outline / per-paragraph
+  structure / page-word stats; **paragraph-anchored editing** (insert before/after
+  paragraph N, replace, delete) plus end-append, cursor-insert, and replace-selection;
+  find-and-replace; font formatting; paragraph styles (headings); tables (insert +
+  bulk-fill + read/write cells); inline pictures; floating text boxes.
 - **Excel (26)** — read/write ranges (2-D) and cells; formulas and array formulas;
   the current selection; cell & number formatting; borders; insert/delete rows and
   columns; autofit; sort; autofilter; charts; sheet management (add/delete/rename/
