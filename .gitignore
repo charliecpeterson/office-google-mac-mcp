@@ -9,3 +9,5 @@ dist/
 
 # Editor config (was stale Windows cruft from the upstream clone)
 .vscode/
+.pytest_cache/
+*.egg-info/

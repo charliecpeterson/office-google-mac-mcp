@@ -1,0 +1,20 @@
+[project]
+name = "office-mcp"
+version = "0.1.0"
+description = "Work live inside open macOS Microsoft Office apps from a CLI agent, via Apple events."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastmcp>=2.3.3",
+    "pyobjc-framework-Quartz>=10.0",
+]
+
+[project.scripts]
+office-mcp = "office_mcp.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/office_mcp"]

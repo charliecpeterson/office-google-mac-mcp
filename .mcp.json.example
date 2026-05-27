@@ -2,15 +2,19 @@
   "mcpServers": {
     "word": {
       "command": "uv",
-      "args": ["run", "--directory", "/path/to/office-mcp", "office-mcp", "word"]
+      "args": ["run", "--directory", "/path/to/repo/packages/office", "office-mcp", "word"]
     },
     "excel": {
       "command": "uv",
-      "args": ["run", "--directory", "/path/to/office-mcp", "office-mcp", "excel"]
+      "args": ["run", "--directory", "/path/to/repo/packages/office", "office-mcp", "excel"]
     },
     "powerpoint": {
       "command": "uv",
-      "args": ["run", "--directory", "/path/to/office-mcp", "office-mcp", "powerpoint"]
+      "args": ["run", "--directory", "/path/to/repo/packages/office", "office-mcp", "powerpoint"]
+    },
+    "google-sheets": {
+      "command": "uv",
+      "args": ["run", "--directory", "/path/to/repo/packages/google", "google-mcp", "sheets"]
     }
   }
 }
