@@ -11,3 +11,8 @@ dist/
 .vscode/
 .pytest_cache/
 *.egg-info/
+
+# Google OAuth secrets — never commit
+client_secret*.json
+credentials.json
+token.json
