@@ -32,6 +32,15 @@ Inline formatting: docs_format_range(paragraph=N, start, end, bold/italic/font/
 size/color/link/...) sets character-level style on a range within a paragraph.
 color is [r, g, b] 0-255; size is points.
 
+Images: docs_insert_image(url, after=N or before=N) drops an inline image
+anchored to a paragraph (Google fetches the URL; some hosts get rejected).
+
+Escape hatch: docs_batch_update(requests) accepts a raw Docs API request list.
+
+Note: comments are not exposed. Drive's Comments API requires full drive scope
+(this MCP uses drive.file, which only sees files the app itself created). To
+add commenting you would need to broaden the OAuth scope and re-consent.
+
 Paragraph styles: NORMAL_TEXT, TITLE, SUBTITLE, HEADING_1..HEADING_6.
 """
 
@@ -534,6 +543,50 @@ def register(mcp):
                 )
         svc.documents().batchUpdate(documentId=sid, body={"requests": requests}).execute()
         return {"paragraph": paragraph, "count": len(positions)}
+
+    @mcp.tool
+    def docs_insert_image(
+        url: str,
+        after: int | None = None,
+        before: int | None = None,
+    ) -> dict:
+        """Insert an inline image from a publicly accessible URL, anchored to a
+        paragraph (pass either `after` or `before`). Google's backend fetches the
+        URL; if you get a "could not fetch" error, try a different host."""
+        if (after is None) == (before is None):
+            raise ValueError("pass exactly one of after= or before=")
+        sid = auth.require_active("docs")
+        svc = auth.docs_service()
+        anchor = _paragraph_at(svc, sid, after if after is not None else before)
+        location = anchor["endIndex"] - 1 if after is not None else anchor["startIndex"]
+        resp = svc.documents().batchUpdate(
+            documentId=sid,
+            body={"requests": [
+                {"insertInlineImage": {
+                    "uri": url,
+                    "location": {"index": location},
+                }}
+            ]},
+        ).execute()
+        return {
+            "inserted_at": location,
+            "objectId": resp["replies"][0]["insertInlineImage"]["objectId"],
+        }
+
+    @mcp.tool
+    def docs_batch_update(requests: list) -> dict:
+        """Raw escape hatch: send a list of Docs API batchUpdate requests. Use
+        for anything no semantic tool covers."""
+        if not isinstance(requests, list) or not requests:
+            raise ValueError("requests must be a non-empty list of API request dicts")
+        sid = auth.require_active("docs")
+        resp = (
+            auth.docs_service()
+            .documents()
+            .batchUpdate(documentId=sid, body={"requests": requests})
+            .execute()
+        )
+        return {"replies": resp.get("replies", [])}
 
     @mcp.tool
     def docs_set_style(index: int, style: str) -> dict:
