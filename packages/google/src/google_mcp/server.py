@@ -6,7 +6,9 @@ Mirrors the Office MCP's per-app structure: each app is a module with a
 
 from fastmcp import FastMCP
 
-APPS: dict = {}  # sheets, docs, slides — added as each is built
+from google_mcp import sheets
+
+APPS: dict = {"sheets": sheets}  # docs, slides — added as each is built
 
 
 def build(app: str) -> FastMCP:
