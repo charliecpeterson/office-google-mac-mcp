@@ -35,6 +35,18 @@ public URL. Position in points (72pt = 1in); default slide is 720x405pt (16:9).
 Tables: slides_insert_table(slide=N, rows, cols, x, y, width, height, data=)
 inserts and optionally fills in one call. slides_fill_table overwrites cells
 of an existing table; slides_get_tables reads all tables back.
+slides_format_cell(slide, table_object_id, row, col, ...) bolds/styles a
+single table cell (e.g. header row).
+
+Custom layout: slides_insert_text_box(slide, x, y, w, h, text=) drops a sized
+text box for captions / side-by-side compositions the built-in layouts
+don't cover. slides_set_element_bounds(slide, object_id, x=, y=, width=,
+height=) moves/resizes any element; slides_delete_element removes one.
+slides_read includes each element's x/y/width/height in points so positions
+are visible without a screenshot.
+
+Speaker notes: slides_set_notes(slide=N, text) sets the notes shown to the
+presenter.
 
 Layouts: BLANK, CAPTION_ONLY, TITLE, TITLE_AND_BODY, TITLE_AND_TWO_COLUMNS,
 TITLE_ONLY, SECTION_HEADER, SECTION_TITLE_AND_DESCRIPTION, ONE_COLUMN_TEXT,
@@ -103,7 +115,7 @@ def _text_style_payload(
     return style, ",".join(fields)
 
 
-_PT_PER_EMU = 1.0 / 9525.0
+_PT_PER_EMU = 1.0 / 12700.0  # Google Slides uses 914400 EMU/inch, 72 PT/inch
 
 
 def _to_pt(dim: dict | None) -> float | None:
@@ -157,8 +169,35 @@ def _shape_text(shape: dict) -> str:
     return text
 
 
+def _element_bounds_pt(el: dict) -> dict | None:
+    """Displayed (x, y, width, height) in points for a page element, computed
+    from its size + transform. Returns None if size is missing."""
+    size = el.get("size", {})
+    inherent_w = _to_pt(size.get("width"))
+    inherent_h = _to_pt(size.get("height"))
+    if inherent_w is None or inherent_h is None:
+        return None
+    t = el.get("transform", {})
+    tx = t.get("translateX", 0)
+    ty = t.get("translateY", 0)
+    if t.get("unit") == "EMU":
+        tx *= _PT_PER_EMU
+        ty *= _PT_PER_EMU
+    sx = t.get("scaleX", 1)
+    sy = t.get("scaleY", 1)
+    return {
+        "x": round(tx, 2),
+        "y": round(ty, 2),
+        "width": round(inherent_w * sx, 2),
+        "height": round(inherent_h * sy, 2),
+    }
+
+
 def _read_element(el: dict) -> dict:
     out = {"objectId": el["objectId"]}
+    bounds = _element_bounds_pt(el)
+    if bounds is not None:
+        out.update(bounds)
     if "shape" in el:
         shape = el["shape"]
         out["type"] = "shape"
@@ -417,7 +456,12 @@ def register(mcp):
         data: list[list] | None = None,
     ) -> dict:
         """Insert a rows x cols table on a slide. If `data` is provided (2-D
-        list), cells are populated in the same call. Returns the table's objectId."""
+        list), cells are populated in the same call. Returns the table's objectId.
+
+        Note: the Slides API picks default cell sizes for createTable; the
+        width/height passed here set the table's bounding box position but the
+        rendered table size is auto-computed from row/column count and content.
+        Use slides_set_element_bounds afterwards if you need to enforce a size."""
         if rows < 1 or cols < 1:
             raise ValueError("rows and cols must be >= 1")
         sid = auth.require_active("slides")
@@ -530,6 +574,231 @@ def register(mcp):
                     }
                 )
         return out
+
+    @mcp.tool
+    def slides_set_notes(slide_index: int, text: str) -> dict:
+        """Set the speaker notes for slide N (replaces existing notes)."""
+        sid = auth.require_active("slides")
+        svc = auth.slides_service()
+        slide = _slide_at(svc, sid, slide_index)
+        notes_page = slide.get("slideProperties", {}).get("notesPage", {})
+        notes_oid = (
+            notes_page.get("notesProperties", {}).get("speakerNotesObjectId")
+        )
+        if not notes_oid:
+            raise RuntimeError(
+                f"no speaker-notes shape found on slide {slide_index}"
+            )
+        current = ""
+        for el in notes_page.get("pageElements", []):
+            if el.get("objectId") == notes_oid and "shape" in el:
+                current = _shape_text(el["shape"])
+                break
+        requests: list[dict] = []
+        if current:
+            requests.append(
+                {"deleteText": {"objectId": notes_oid, "textRange": {"type": "ALL"}}}
+            )
+        if text:
+            requests.append(
+                {"insertText": {
+                    "objectId": notes_oid,
+                    "insertionIndex": 0,
+                    "text": text,
+                }}
+            )
+        if requests:
+            svc.presentations().batchUpdate(
+                presentationId=sid, body={"requests": requests}
+            ).execute()
+        return {"slide": slide_index, "objectId": notes_oid}
+
+    @mcp.tool
+    def slides_set_element_bounds(
+        slide_index: int,
+        object_id: str,
+        x: float | None = None,
+        y: float | None = None,
+        width: float | None = None,
+        height: float | None = None,
+    ) -> dict:
+        """Move and/or resize an element on a slide. Any parameter omitted keeps
+        its current value. Coordinates and sizes in points (1in = 72pt). Existing
+        rotation/shear is preserved."""
+        if x is None and y is None and width is None and height is None:
+            raise ValueError("pass at least one of x, y, width, height")
+        sid = auth.require_active("slides")
+        svc = auth.slides_service()
+        slide = _slide_at(svc, sid, slide_index)
+        target = next(
+            (el for el in slide.get("pageElements", []) if el["objectId"] == object_id),
+            None,
+        )
+        if target is None:
+            raise ValueError(f"object {object_id!r} not found on slide {slide_index}")
+        size = target.get("size", {})
+        inherent_w = _to_pt(size.get("width")) or 1.0
+        inherent_h = _to_pt(size.get("height")) or 1.0
+        cur = target.get("transform", {})
+        cur_tx = cur.get("translateX", 0)
+        cur_ty = cur.get("translateY", 0)
+        if cur.get("unit") == "EMU":
+            cur_tx *= _PT_PER_EMU
+            cur_ty *= _PT_PER_EMU
+        new_tx = cur_tx if x is None else x
+        new_ty = cur_ty if y is None else y
+        new_sx = cur.get("scaleX", 1) if width is None else (width / inherent_w)
+        new_sy = cur.get("scaleY", 1) if height is None else (height / inherent_h)
+        svc.presentations().batchUpdate(
+            presentationId=sid,
+            body={"requests": [
+                {"updatePageElementTransform": {
+                    "objectId": object_id,
+                    "applyMode": "ABSOLUTE",
+                    "transform": {
+                        "scaleX": new_sx,
+                        "scaleY": new_sy,
+                        "translateX": new_tx,
+                        "translateY": new_ty,
+                        "shearX": cur.get("shearX", 0),
+                        "shearY": cur.get("shearY", 0),
+                        "unit": "PT",
+                    },
+                }}
+            ]},
+        ).execute()
+        return {
+            "slide": slide_index,
+            "objectId": object_id,
+            "x": new_tx,
+            "y": new_ty,
+            "width": new_sx * inherent_w,
+            "height": new_sy * inherent_h,
+        }
+
+    @mcp.tool
+    def slides_delete_element(slide_index: int, object_id: str) -> dict:
+        """Delete a single page element (shape/image/table/line) from a slide."""
+        sid = auth.require_active("slides")
+        svc = auth.slides_service()
+        slide = _slide_at(svc, sid, slide_index)
+        target = next(
+            (el for el in slide.get("pageElements", []) if el["objectId"] == object_id),
+            None,
+        )
+        if target is None:
+            raise ValueError(f"object {object_id!r} not found on slide {slide_index}")
+        svc.presentations().batchUpdate(
+            presentationId=sid,
+            body={"requests": [{"deleteObject": {"objectId": object_id}}]},
+        ).execute()
+        return {"slide": slide_index, "deleted": object_id}
+
+    @mcp.tool
+    def slides_insert_text_box(
+        slide_index: int,
+        x: float,
+        y: float,
+        width: float,
+        height: float,
+        text: str = "",
+    ) -> dict:
+        """Insert a TEXT_BOX shape on a slide at (x, y) with the given size, and
+        optionally pre-fill it with text. Use this for custom layouts (captions,
+        image-plus-text side-by-side, etc.) where the built-in layouts don't fit."""
+        sid = auth.require_active("slides")
+        svc = auth.slides_service()
+        slide = _slide_at(svc, sid, slide_index)
+        resp = svc.presentations().batchUpdate(
+            presentationId=sid,
+            body={"requests": [
+                {"createShape": {
+                    "shapeType": "TEXT_BOX",
+                    "elementProperties": _element_properties(
+                        slide["objectId"], x, y, width, height
+                    ),
+                }}
+            ]},
+        ).execute()
+        shape_oid = resp["replies"][0]["createShape"]["objectId"]
+        if text:
+            svc.presentations().batchUpdate(
+                presentationId=sid,
+                body={"requests": [
+                    {"insertText": {
+                        "objectId": shape_oid,
+                        "insertionIndex": 0,
+                        "text": text,
+                    }}
+                ]},
+            ).execute()
+        return {"slide": slide_index, "objectId": shape_oid}
+
+    @mcp.tool
+    def slides_format_cell(
+        slide_index: int,
+        table_object_id: str,
+        row: int,
+        col: int,
+        start: int | None = None,
+        end: int | None = None,
+        bold: bool | None = None,
+        italic: bool | None = None,
+        underline: bool | None = None,
+        strikethrough: bool | None = None,
+        font: str | None = None,
+        size: float | None = None,
+        color: list | None = None,
+        link: str | None = None,
+    ) -> dict:
+        """Inline text formatting on a single table cell (row, col are 0-based).
+        Common use: bold the header row by calling once per cell with bold=True."""
+        style, fields = _text_style_payload(
+            bold=bold, italic=italic, underline=underline, strikethrough=strikethrough,
+            font=font, size=size, color=color, link=link,
+        )
+        if not fields:
+            raise ValueError(
+                "no formatting changes requested; pass at least one of "
+                "bold/italic/underline/strikethrough/font/size/color/link"
+            )
+        if (start is None) != (end is None):
+            raise ValueError("pass both start and end, or neither")
+        sid = auth.require_active("slides")
+        svc = auth.slides_service()
+        slide = _slide_at(svc, sid, slide_index)
+        target = next(
+            (el for el in slide.get("pageElements", []) if el["objectId"] == table_object_id),
+            None,
+        )
+        if target is None or "table" not in target:
+            raise ValueError(
+                f"table {table_object_id!r} not found on slide {slide_index}"
+            )
+        text_range = (
+            {"type": "FIXED_RANGE", "startIndex": start, "endIndex": end}
+            if start is not None
+            else {"type": "ALL"}
+        )
+        svc.presentations().batchUpdate(
+            presentationId=sid,
+            body={"requests": [
+                {"updateTextStyle": {
+                    "objectId": table_object_id,
+                    "cellLocation": {"rowIndex": row, "columnIndex": col},
+                    "textRange": text_range,
+                    "style": style,
+                    "fields": fields,
+                }}
+            ]},
+        ).execute()
+        return {
+            "slide": slide_index,
+            "table": table_object_id,
+            "row": row,
+            "col": col,
+            "fields": fields,
+        }
 
     @mcp.tool
     def slides_set_text(slide_index: int, object_id: str, text: str) -> dict:
