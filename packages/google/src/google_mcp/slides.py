@@ -6,6 +6,10 @@ returned from `slides_read`. Edits via the Slides v1 API show up live in the
 open browser tab through Google's realtime sync.
 """
 
+import urllib.request
+
+from fastmcp.utilities.types import Image
+
 from google_mcp import auth
 
 INSTRUCTIONS = """\
@@ -51,6 +55,10 @@ reads them.
 Composite: slides_add_content_slide(title, bullets, after=N or before=N)
 inserts a TITLE_AND_BODY slide and fills title + body with real bullets in
 one call.
+
+Visual verification: slides_thumbnail(slide=N) returns a PNG of the rendered
+slide (cheaper than a full export). Use after a layout edit to confirm bounds
+look right.
 
 Escape hatch: slides_batch_update(requests) accepts a raw Slides API request
 list.
@@ -923,6 +931,23 @@ def register(mcp):
                 text = _shape_text(el["shape"]).rstrip("\n")
                 return text or None
         return None
+
+    @mcp.tool
+    def slides_thumbnail(slide_index: int) -> Image:
+        """Render slide N as a PNG thumbnail (the visual the agent would need a
+        screenshot for in Office). Uses the Slides API's pages.getThumbnail —
+        works on the doc's existing OAuth scope, no Drive elevation needed."""
+        sid = auth.require_active("slides")
+        svc = auth.slides_service()
+        slide = _slide_at(svc, sid, slide_index)
+        meta = (
+            svc.presentations()
+            .pages()
+            .getThumbnail(presentationId=sid, pageObjectId=slide["objectId"])
+            .execute()
+        )
+        with urllib.request.urlopen(meta["contentUrl"]) as resp:
+            return Image(data=resp.read(), format="png")
 
     @mcp.tool
     def slides_batch_update(requests: list) -> dict:
