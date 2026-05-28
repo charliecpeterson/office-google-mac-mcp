@@ -45,8 +45,15 @@ height=) moves/resizes any element; slides_delete_element removes one.
 slides_read includes each element's x/y/width/height in points so positions
 are visible without a screenshot.
 
-Speaker notes: slides_set_notes(slide=N, text) sets the notes shown to the
-presenter.
+Speaker notes: slides_set_notes(slide=N, text) sets the notes, slides_get_notes
+reads them.
+
+Composite: slides_add_content_slide(title, bullets, after=N or before=N)
+inserts a TITLE_AND_BODY slide and fills title + body with real bullets in
+one call.
+
+Escape hatch: slides_batch_update(requests) accepts a raw Slides API request
+list.
 
 Layouts: BLANK, CAPTION_ONLY, TITLE, TITLE_AND_BODY, TITLE_AND_TWO_COLUMNS,
 TITLE_ONLY, SECTION_HEADER, SECTION_TITLE_AND_DESCRIPTION, ONE_COLUMN_TEXT,
@@ -829,3 +836,104 @@ def register(mcp):
                 presentationId=sid, body={"requests": requests}
             ).execute()
         return {"slide": slide_index, "objectId": object_id, "text": text}
+
+    @mcp.tool
+    def slides_add_content_slide(
+        title: str,
+        bullets: list,
+        after: int | None = None,
+        before: int | None = None,
+    ) -> dict:
+        """Composite: insert a TITLE_AND_BODY slide, set the title, and fill the
+        body with one bullet per item in `bullets` (real bullet rendering via the
+        Slides bullet API, not just lines with dots). Mirrors ppt_add_content_slide
+        on the Office side."""
+        if (after is None) == (before is None):
+            raise ValueError("pass exactly one of after= or before=")
+        sid = auth.require_active("slides")
+        svc = auth.slides_service()
+        anchor = after if after is not None else before
+        insertion = anchor if after is not None else anchor - 1
+        resp = svc.presentations().batchUpdate(
+            presentationId=sid,
+            body={"requests": [
+                {"createSlide": {
+                    "insertionIndex": insertion,
+                    "slideLayoutReference": {"predefinedLayout": "TITLE_AND_BODY"},
+                }}
+            ]},
+        ).execute()
+        new_oid = resp["replies"][0]["createSlide"]["objectId"]
+        new_idx = insertion + 1
+        pres = svc.presentations().get(presentationId=sid).execute()
+        slide = _slides(pres)[new_idx - 1]
+        title_oid = next(
+            (el["objectId"] for el in slide.get("pageElements", [])
+             if "shape" in el and el["shape"].get("placeholder", {}).get("type") == "TITLE"),
+            None,
+        )
+        body_oid = next(
+            (el["objectId"] for el in slide.get("pageElements", [])
+             if "shape" in el and el["shape"].get("placeholder", {}).get("type") == "BODY"),
+            None,
+        )
+        if not title_oid or not body_oid:
+            raise RuntimeError(
+                f"created slide {new_idx} missing TITLE or BODY placeholder"
+            )
+        body_text = "\n".join(str(b) for b in bullets)
+        requests: list[dict] = [
+            {"insertText": {"objectId": title_oid, "insertionIndex": 0, "text": title}},
+        ]
+        if body_text:
+            requests.append(
+                {"insertText": {"objectId": body_oid, "insertionIndex": 0, "text": body_text}}
+            )
+            requests.append(
+                {"createParagraphBullets": {
+                    "objectId": body_oid,
+                    "textRange": {"type": "ALL"},
+                    "bulletPreset": "BULLET_DISC_CIRCLE_SQUARE",
+                }}
+            )
+        svc.presentations().batchUpdate(
+            presentationId=sid, body={"requests": requests}
+        ).execute()
+        return {
+            "new_slide_index": new_idx,
+            "objectId": new_oid,
+            "title_objectId": title_oid,
+            "body_objectId": body_oid,
+        }
+
+    @mcp.tool
+    def slides_get_notes(slide_index: int) -> str | None:
+        """Read the speaker notes for slide N (None if empty)."""
+        sid = auth.require_active("slides")
+        svc = auth.slides_service()
+        slide = _slide_at(svc, sid, slide_index)
+        notes_page = slide.get("slideProperties", {}).get("notesPage", {})
+        notes_oid = (
+            notes_page.get("notesProperties", {}).get("speakerNotesObjectId")
+        )
+        if not notes_oid:
+            return None
+        for el in notes_page.get("pageElements", []):
+            if el.get("objectId") == notes_oid and "shape" in el:
+                text = _shape_text(el["shape"]).rstrip("\n")
+                return text or None
+        return None
+
+    @mcp.tool
+    def slides_batch_update(requests: list) -> dict:
+        """Raw escape hatch: send a list of Slides API batchUpdate requests."""
+        if not isinstance(requests, list) or not requests:
+            raise ValueError("requests must be a non-empty list of API request dicts")
+        sid = auth.require_active("slides")
+        resp = (
+            auth.slides_service()
+            .presentations()
+            .batchUpdate(presentationId=sid, body={"requests": requests})
+            .execute()
+        )
+        return {"replies": resp.get("replies", [])}
